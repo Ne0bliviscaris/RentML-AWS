@@ -1,0 +1,103 @@
+name: Deploy RentML to AWS
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'lambda/**'
+      - 'sagemaker/**' 
+      - 'streamlit/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  LAMBDA_FUNCTION_NAME: rentml-ocr
+  SAGEMAKER_MODEL_NAME: rentml-car-detection
+  EC2_INSTANCE_TAG: rentml-streamlit
+
+jobs:
+  deploy-lambda:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'lambda/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Create Lambda deployment package
+      run: |
+        cd lambda
+        zip -r lambda.zip . -x "*.pyc" "__pycache__/*"
+    
+    - name: Deploy Lambda function
+      run: |
+        cd lambda
+        aws lambda update-function-code \
+          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+          --zip-file fileb://lambda.zip
+
+  deploy-sagemaker:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'sagemaker/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Package and upload model
+      run: |
+        cd sagemaker
+        tar -czf model.tar.gz *
+        aws s3 cp model.tar.gz s3://rentml-models/model.tar.gz
+    
+    - name: Update SageMaker endpoint
+      run: |
+        aws sagemaker update-endpoint \
+          --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
+          --endpoint-config-name ${{ env.SAGEMAKER_MODEL_NAME }}-config
+
+  deploy-streamlit:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'streamlit/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Get EC2 instance ID
+      id: get-instance
+      run: |
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${{ env.EC2_INSTANCE_TAG }}" \
+                   "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" \
+          --output text)
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+    
+    - name: Deploy to EC2
+      run: |
+        aws ssm send-command \
+          --instance-ids ${{ steps.get-instance.outputs.instance_id }} \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["cd /home/ubuntu/RentML-AWS","git pull","sudo systemctl restart streamlit"]'
