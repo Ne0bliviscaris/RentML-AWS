@@ -14,6 +14,7 @@ env:
   LAMBDA_FUNCTION_NAME: rentml-ocr
   SAGEMAKER_MODEL_NAME: rentml-car-detection
   EC2_INSTANCE_TAG: rentml-streamlit
+  S3_BUCKET: rentml-model
 
 jobs:
   deploy-lambda:
@@ -39,9 +40,18 @@ jobs:
     - name: Deploy Lambda function
       run: |
         cd lambda
-        aws lambda update-function-code \
-          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-          --zip-file fileb://lambda.zip
+        if ! aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
+          aws lambda create-function \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --runtime python3.9 \
+            --role arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/LabRole \
+            --handler lambda_function.lambda_handler \
+            --zip-file fileb://lambda.zip
+        else
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda.zip
+        fi
 
   deploy-sagemaker:
     runs-on: ubuntu-latest
@@ -62,7 +72,7 @@ jobs:
       run: |
         cd sagemaker
         tar -czf model.tar.gz *
-        aws s3 cp model.tar.gz s3://rentml-models/model.tar.gz
+        aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
     
     - name: Update SageMaker endpoint
       run: |
