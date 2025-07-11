@@ -68,18 +68,48 @@ jobs:
         aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
         aws-region: ${{ env.AWS_REGION }}
     
+    - name: Create S3 bucket if does not exist
+      run: |
+        aws s3 mb s3://rentml-model 2>/dev/null || echo "Bucket exists"
+    
     - name: Package and upload model
       run: |
         cd sagemaker
         tar -czf model.tar.gz *
         aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
     
-    - name: Update SageMaker endpoint
+    - name: Create or update SageMaker resources
       run: |
-        aws sagemaker update-endpoint \
-          --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
-          --endpoint-config-name ${{ env.SAGEMAKER_MODEL_NAME }}-config
+        # Get AWS account ID for IAM role ARN
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
+        # Create SageMaker model if it doesn't exist
+        if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
+          aws sagemaker create-model \
+            --model-name ${{ env.SAGEMAKER_MODEL_NAME }} \
+            --primary-container Image=763104351884.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/pytorch-inference:1.13.1-cpu-py39-ubuntu20.04-sagemaker,ModelDataUrl=s3://rentml-model/model.tar.gz \
+            --execution-role-arn arn:aws:iam::$ACCOUNT_ID:role/LabRole
+        fi
+        
+        # Create unique endpoint config name with timestamp
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        CONFIG_NAME="${{ env.SAGEMAKER_MODEL_NAME }}-config-${TIMESTAMP}"
+        
+        # Create new endpoint configuration
+        aws sagemaker create-endpoint-config \
+          --endpoint-config-name $CONFIG_NAME \
+          --production-variants VariantName=primary,ModelName=${{ env.SAGEMAKER_MODEL_NAME }},InitialInstanceCount=1,InstanceType=ml.m5.large,InitialVariantWeight=1
+        
+        # Create new endpoint or update existing one
+        if ! aws sagemaker describe-endpoint --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
+          aws sagemaker create-endpoint \
+            --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
+            --endpoint-config-name $CONFIG_NAME
+        else
+          aws sagemaker update-endpoint \
+            --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
+            --endpoint-config-name $CONFIG_NAME
+        fi
   deploy-streamlit:
     runs-on: ubuntu-latest
     if: contains(github.event.head_commit.modified, 'streamlit/') || github.event_name == 'workflow_dispatch'
