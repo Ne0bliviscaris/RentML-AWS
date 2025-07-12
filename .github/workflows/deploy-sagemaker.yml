@@ -1,64 +1,24 @@
-name: Deploy RentML to AWS
+name: Deploy SageMaker Model
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'lambda/**'
-      - 'sagemaker/**' 
+      - 'sagemaker/**'
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
-  LAMBDA_FUNCTION_NAME: rentml-ocr
   SAGEMAKER_MODEL_NAME: rentml-car-detection
-  EC2_INSTANCE_TAG: rentml-streamlit
   S3_BUCKET: rentml-model
 
 jobs:
-  deploy-lambda:
-    runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'lambda/') || github.event_name == 'workflow_dispatch'
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-        aws-region: ${{ env.AWS_REGION }}
-    
-    - name: Create Lambda deployment package
-      run: |
-        cd lambda
-        zip -r lambda.zip . -x "*.pyc" "__pycache__/*"
-    
-    - name: Deploy Lambda function
-      run: |
-        cd lambda
-        if ! aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
-          aws lambda create-function \
-            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-            --runtime python3.9 \
-            --role arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/LabRole \
-            --handler lambda_function.lambda_handler \
-            --zip-file fileb://lambda.zip
-        else
-          aws lambda update-function-code \
-            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-            --zip-file fileb://lambda.zip
-        fi
-
   deploy-sagemaker:
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'sagemaker/') || github.event_name == 'workflow_dispatch'
-    
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -66,40 +26,42 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
         aws-region: ${{ env.AWS_REGION }}
-    
+
     - name: Create S3 bucket if does not exist
       run: |
         aws s3 mb s3://rentml-model 2>/dev/null || echo "Bucket exists"
-    
+
     - name: Package and upload model
       run: |
-        cd sagemaker
-        tar -czf model.tar.gz *
-        aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
-    
-    - name: Create or update SageMaker resources
+        if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
+          cd sagemaker
+          tar -czf model.tar.gz *
+          aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
+        else
+          echo "Model already exists, skipping packaging and upload."
+        fi
+        
+    - name: Create SageMaker model if it does not exist
       run: |
-        # Get AWS account ID for IAM role ARN
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-        # Create SageMaker model if it doesn't exist
         if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
           aws sagemaker create-model \
             --model-name ${{ env.SAGEMAKER_MODEL_NAME }} \
             --primary-container Image=763104351884.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/pytorch-inference:1.13.1-cpu-py39-ubuntu20.04-sagemaker,ModelDataUrl=s3://rentml-model/model.tar.gz \
             --execution-role-arn arn:aws:iam::$ACCOUNT_ID:role/LabRole
         fi
-        
-        # Create unique endpoint config name with timestamp
+
+    - name: Create SageMaker endpoint config
+      run: |
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
         CONFIG_NAME="${{ env.SAGEMAKER_MODEL_NAME }}-config-${TIMESTAMP}"
-        
-        # Create new endpoint configuration
+        echo "CONFIG_NAME=$CONFIG_NAME" >> $GITHUB_ENV
         aws sagemaker create-endpoint-config \
           --endpoint-config-name $CONFIG_NAME \
           --production-variants VariantName=primary,ModelName=${{ env.SAGEMAKER_MODEL_NAME }},InitialInstanceCount=1,InstanceType=ml.m5.large,InitialVariantWeight=1
-        
-        # Create new endpoint or update existing one
+
+    - name: Create or update SageMaker endpoint
+      run: |
         if ! aws sagemaker describe-endpoint --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
           aws sagemaker create-endpoint \
             --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
@@ -109,4 +71,3 @@ jobs:
             --endpoint-name ${{ env.SAGEMAKER_MODEL_NAME }} \
             --endpoint-config-name $CONFIG_NAME
         fi
-
