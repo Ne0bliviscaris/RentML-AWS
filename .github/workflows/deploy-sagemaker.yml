@@ -31,7 +31,7 @@ jobs:
       run: |
         aws s3 mb s3://rentml-model 2>/dev/null || echo "Bucket exists"
 
-    - name: Package and upload model
+    - name: Package and upload model to S3
       run: |
         if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
           cd sagemaker
@@ -40,8 +40,8 @@ jobs:
         else
           echo "Model already exists, skipping packaging and upload."
         fi
-        
-    - name: Create SageMaker model if it does not exist
+
+    - name: Register model in SageMaker
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
