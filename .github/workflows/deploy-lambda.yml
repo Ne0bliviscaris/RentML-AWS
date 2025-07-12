@@ -1,0 +1,48 @@
+name: Deploy OCR to Lambda
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'lambda/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  LAMBDA_FUNCTION_NAME: rentml-ocr
+
+jobs:
+  deploy-lambda:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Create Lambda deployment package
+      run: |
+        cd lambda
+        zip -r lambda.zip . -x "*.pyc" "__pycache__/*"
+
+    - name: Deploy Lambda function
+      run: |
+        cd lambda
+        if ! aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
+          aws lambda create-function \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --runtime python3.9 \
+            --role arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/LabRole \
+            --handler lambda_function.lambda_handler \
+            --zip-file fileb://lambda.zip
+        else
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda.zip
+        fi
