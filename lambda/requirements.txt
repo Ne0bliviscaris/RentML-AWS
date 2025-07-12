@@ -1,1 +1,1 @@
-requests==2.31.0
+easyocr==1.7.2
