@@ -1,10 +1,10 @@
-name: Deploy Model API to SageMaker
+name: Deploy Recognition Model to SageMaker
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'sagemaker/**'
+      - 'sagemaker-recognition/**'
   workflow_dispatch:
 
 env:
@@ -33,7 +33,7 @@ jobs:
 
     - name: Package and upload model to S3
       run: |
-        cd sagemaker
+        cd sagemaker-recognition
         tar -czf model.tar.gz *
         aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
 
