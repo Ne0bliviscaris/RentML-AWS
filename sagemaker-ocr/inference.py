@@ -1,5 +1,3 @@
-import io
-
 from ocr import mileage_ocr
 
 
@@ -11,7 +9,7 @@ def model_fn(model_dir):
 def input_fn(input_data, content_type):
     """Deserialize input data for inference."""
     if content_type == "application/x-image":
-        return io.BytesIO(input_data)
+        return input_data
     raise ValueError("Unsupported content type")
 
 
