@@ -1,22 +1,29 @@
-import base64
 import json
 
 import boto3
-import requests
 
 import streamlit as st
 
 
-def call_lambda_ocr(image_bytes):
-    """Call Lambda function for OCR processing"""
-    lambda_client = boto3.client("lambda", region_name="us-east-1")
+def show_ocr_result(ocr_result=None):
+    """Display OCR result."""
+    if ocr_result:
+        st.subheader("Mileage (OCR)")
+        st.write(f"Detected: {ocr_result.get('mileage', 'Not found')}")
+    else:
+        st.subheader("Mileage (OCR)")
+        st.write("No OCR result available.")
 
-    payload = {"image": base64.b64encode(image_bytes).decode("utf-8")}
 
-    response = lambda_client.invoke(FunctionName="rentml-ocr", Payload=json.dumps(payload))
-
-    result = json.loads(response["Payload"].read())
-    return json.loads(result["body"])
+def show_detection_result(detection_result):
+    """Display car detection result."""
+    if detection_result:
+        st.subheader("Car Type (AI)")
+        st.write(f"Type: {detection_result.get('car_type', 'Unknown')}")
+        st.write(f"Confidence: {detection_result.get('confidence', 0):.2f}")
+    else:
+        st.subheader("Car Type (AI)")
+        st.write("No detection result available.")
 
 
 def call_sagemaker_detection(image_bytes):
@@ -42,20 +49,14 @@ if uploaded_file is not None:
         image_bytes = uploaded_file.read()
 
         with st.spinner("Processing..."):
-            try:
-                ocr_result = call_lambda_ocr(image_bytes)
-                detection_result = call_sagemaker_detection(image_bytes)
+            # ocr_result = call_lambda_ocr(image_bytes)
+            ocr_result = None
+            detection_result = call_sagemaker_detection(image_bytes)
 
-                col1, col2 = st.columns(2)
+            st.header("Results")
+            col1, col2 = st.columns(2)
+            with col1:
+                show_ocr_result(ocr_result)
 
-                with col1:
-                    st.subheader("Mileage (OCR)")
-                    st.write(f"Detected: {ocr_result.get('mileage', 'Not found')}")
-
-                with col2:
-                    st.subheader("Car Type (AI)")
-                    st.write(f"Type: {detection_result.get('car_type', 'Unknown')}")
-                    st.write(f"Confidence: {detection_result.get('confidence', 0):.2f}")
-
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+            with col2:
+                show_detection_result(detection_result)
