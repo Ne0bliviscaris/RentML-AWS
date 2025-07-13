@@ -33,13 +33,9 @@ jobs:
 
     - name: Package and upload model to S3
       run: |
-        if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
-          cd sagemaker
-          tar -czf model.tar.gz *
-          aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
-        else
-          echo "Model already exists, skipping packaging and upload."
-        fi
+        cd sagemaker
+        tar -czf model.tar.gz *
+        aws s3 cp model.tar.gz s3://rentml-model/model.tar.gz
 
     - name: Register model in SageMaker
       run: |
