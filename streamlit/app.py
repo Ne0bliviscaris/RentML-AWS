@@ -68,6 +68,6 @@ if uploaded_file is not None:
             col1, col2 = st.columns(2)
             with col1:
                 # show_ocr_result(ocr_result)
-                st.write("OCR result is currently disabled - issues with dependencies.")
+                st.write("No OCR result - issues with dependencies.")
             with col2:
                 show_detection_result(detection_result)
