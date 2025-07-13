@@ -1,6 +1,6 @@
 import io
 
-from modules.detection_model import identify_car
+from detection_model import identify_car
 
 
 def model_fn(model_dir):
