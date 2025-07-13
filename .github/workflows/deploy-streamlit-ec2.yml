@@ -61,4 +61,4 @@ jobs:
         aws ssm send-command \
           --instance-ids $INSTANCE_ID \
           --document-name "AWS-RunShellScript" \
-          --parameters 'commands=["pkill -f streamlit","cd /home/ec2-user/RentML-AWS/streamlit","nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 &"]'
+          --parameters 'commands=["pkill -f streamlit","cd /home/ec2-user/RentML-AWS/streamlit","streamlit run app.py --server.port 8501 --server.address 0.0.0.0 &"]'
