@@ -36,4 +36,29 @@ jobs:
         aws ssm send-command \
           --instance-ids $INSTANCE_ID \
           --document-name "AWS-RunShellScript" \
-          --parameters 'commands=["cd /home/ec2-user/RentML-AWS","git pull","cd streamlit","pip3 install -r requirements.txt","pkill -f streamlit","nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 &"]'
+          --parameters 'commands=["cd /home/ec2-user/RentML-AWS","git pull"]'
+
+    - name: Install requirements on EC2
+      if: contains(github.event.head_commit.modified, 'streamlit/requirements.txt')
+      run: |
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${{ env.EC2_INSTANCE_TAG }}" \
+                   "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" \
+          --output text)
+        aws ssm send-command \
+          --instance-ids $INSTANCE_ID \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["cd /home/ec2-user/RentML-AWS/streamlit","pip3 install -r requirements.txt"]'
+
+    - name: Launch Streamlit app on EC2
+      run: |
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=${{ env.EC2_INSTANCE_TAG }}" \
+                   "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" \
+          --output text)
+        aws ssm send-command \
+          --instance-ids $INSTANCE_ID \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["pkill -f streamlit","cd /home/ec2-user/RentML-AWS/streamlit","nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 &"]'
