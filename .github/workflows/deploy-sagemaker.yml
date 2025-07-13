@@ -43,7 +43,7 @@ jobs:
         if ! aws sagemaker describe-model --model-name ${{ env.SAGEMAKER_MODEL_NAME }} 2>/dev/null; then
           aws sagemaker create-model \
             --model-name ${{ env.SAGEMAKER_MODEL_NAME }} \
-            --primary-container Image=763104351884.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/pytorch-inference:1.13.1-cpu-py39-ubuntu20.04-sagemaker,ModelDataUrl=s3://rentml-model/model.tar.gz \
+            --primary-container Image=763104351884.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/pytorch-inference:1.13.1-cpu-py39-ubuntu20.04-sagemaker,ModelDataUrl=s3://rentml-model/model.tar.gz,Environment={SAGEMAKER_PROGRAM=inference.py} \
             --execution-role-arn arn:aws:iam::$ACCOUNT_ID:role/LabRole
         fi
 
